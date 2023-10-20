@@ -1,11 +1,21 @@
-import { Modal, ModalCloseButton, ModalContent, ModalHeader, ModalOverlay } from '@chakra-ui/react';
-import React, { useCallback } from 'react';
+import {
+  Modal,
+  ModalCloseButton,
+  ModalContent,
+  ModalHeader,
+  ModalOverlay,
+  useToast,
+  Button,
+} from '@chakra-ui/react';
+import React, { useCallback, useState, useEffect } from 'react';
 import TicTacToeAreaController from '../../../../classes/interactable/TicTacToeAreaController';
+import PlayerController from '../../../../classes/PlayerController';
 import { useInteractable, useInteractableAreaController } from '../../../../classes/TownController';
 import useTownController from '../../../../hooks/useTownController';
-import { InteractableID } from '../../../../types/CoveyTownSocket';
+import { GameResult, GameStatus, InteractableID } from '../../../../types/CoveyTownSocket';
 import GameAreaInteractable from '../GameArea';
-
+import Leaderboard from '../Leaderboard';
+import TicTacToeBoard from './TicTacToeBoard';
 /**
  * The TicTacToeArea component renders the TicTacToe game area.
  * It renders the current state of the area, optionally allowing the player to join the game.
@@ -40,8 +50,113 @@ import GameAreaInteractable from '../GameArea';
  */
 function TicTacToeArea({ interactableID }: { interactableID: InteractableID }): JSX.Element {
   const gameAreaController = useInteractableAreaController<TicTacToeAreaController>(interactableID);
-  // TODO - implement this component
-  return <>{gameAreaController.status}</>;
+  const toast = useToast();
+
+  const [history, setHistory] = useState<GameResult[]>(gameAreaController.history);
+  const [observers, setObservers] = useState<PlayerController[]>(gameAreaController.observers);
+  const [xPlayer, setXPlayer] = useState<PlayerController | undefined>(gameAreaController.x);
+  const [oPlayer, setOPlayer] = useState<PlayerController | undefined>(gameAreaController.o);
+  const [moveCount, setMoveCount] = useState<number>(gameAreaController.moveCount);
+  const [winner, setWinner] = useState<PlayerController | undefined>(gameAreaController.winner);
+  const [whoseTurn, setWhoseTurn] = useState<PlayerController | undefined>(
+    gameAreaController.whoseTurn,
+  );
+  const [isPlayer, setIsPlayer] = useState<boolean>(gameAreaController.isPlayer);
+  const [status, setStatus] = useState<GameStatus>(gameAreaController.status);
+  const townController = useTownController();
+  const ourPlayer = townController.ourPlayer;
+  const [loading, setLoading] = useState(false);
+
+  const handleJoinGame = async () => {
+    setLoading(true);
+    try {
+      await gameAreaController.joinGame();
+    } catch (error) {
+      if (error instanceof Error) {
+        toast({
+          title: 'Error',
+          description: `Error: ${error.message}`,
+          status: 'error',
+          duration: 3000,
+          isClosable: true,
+        });
+      } else {
+        toast({
+          title: 'Error',
+          description: 'An unexpected error occurred.',
+          status: 'error',
+          duration: 3000,
+          isClosable: true,
+        });
+      }
+    } finally {
+      setLoading(false); // Ensure the loading state is reset whether or not there was an error.
+    }
+  };
+
+  useEffect(() => {
+    const handleGameUpdate = () => {
+      setHistory(gameAreaController.history);
+      setObservers(gameAreaController.observers);
+      setXPlayer(gameAreaController.x);
+      setOPlayer(gameAreaController.o);
+      setMoveCount(gameAreaController.moveCount);
+      setWhoseTurn(gameAreaController.whoseTurn);
+      setIsPlayer(gameAreaController.isPlayer);
+      setStatus(gameAreaController.status);
+      setWinner(gameAreaController.winner);
+    };
+
+    const handleGameEnd = () => {
+      if (winner == undefined) {
+        toast({ description: 'Game ended in a tie' });
+      } else if (winner === ourPlayer) {
+        toast({ description: 'You won!' });
+      } else if (winner !== ourPlayer) {
+        toast({ description: 'You lost :(' });
+      }
+    };
+
+    gameAreaController.addListener('gameUpdated', handleGameUpdate);
+    gameAreaController.addListener('gameEnd', handleGameEnd);
+    return () => {
+      gameAreaController.removeListener('gameUpdated', handleGameUpdate);
+      gameAreaController.removeListener('gameEnd', handleGameEnd);
+    };
+  }, [gameAreaController, toast, winner, ourPlayer]);
+
+  const currentTurnMessage = () => {
+    if (status !== 'IN_PROGRESS') {
+      return `Game ${status === 'WAITING_TO_START' ? 'not yet started' : 'over'}.`;
+    }
+    if (whoseTurn === townController.ourPlayer) {
+      return `Game in progress, ${moveCount} moves in, currently your turn`;
+    }
+    return `Game in progress, ${moveCount} moves in, currently ${whoseTurn?.userName}'s turn`;
+  };
+
+  return (
+    <div>
+      <Leaderboard results={history} />
+      <ul aria-label='list of observers in the game'>
+        {observers.map(observer => (
+          <li key={observer.id}>{observer.userName}</li>
+        ))}
+      </ul>
+      <ul aria-label='list of players in the game'>
+        <li>{`X: ${xPlayer?.userName || '(No player yet!)'}`}</li>
+        <li>{`O: ${oPlayer?.userName || '(No player yet!)'}`}</li>
+      </ul>
+
+      <div>{currentTurnMessage()}</div>
+      {(status === 'WAITING_TO_START' || status === 'OVER') && !isPlayer && (
+        <Button onClick={handleJoinGame} isLoading={loading}>
+          {loading ? '' : 'Join New Game'}
+        </Button>
+      )}
+      <TicTacToeBoard gameAreaController={gameAreaController} />
+    </div>
+  );
 }
 
 // Do not edit below this line

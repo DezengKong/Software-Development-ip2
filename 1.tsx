@@ -3,6 +3,7 @@ import React, { useEffect, useState } from 'react';
 import TicTacToeAreaController, {
   TicTacToeCell,
 } from '../../../../classes/interactable/TicTacToeAreaController';
+import { TicTacToeGridPosition } from '../../../../types/CoveyTownSocket';
 
 export type TicTacToeGameProps = {
   gameAreaController: TicTacToeAreaController;
@@ -56,51 +57,66 @@ const StyledTicTacToeBoard = chakra(Container, {
  * @param gameAreaController the controller for the TicTacToe game
  */
 export default function TicTacToeBoard({ gameAreaController }: TicTacToeGameProps): JSX.Element {
-  const [board, setBoard] = useState<TicTacToeCell[][]>(gameAreaController.board); // Initialize with the current board
-  const [isOurTurn, setIsOurTurn] = useState<boolean>(gameAreaController.isOurTurn);
   const toast = useToast();
+  const [gameBoard, setGameBoard] = useState<TicTacToeCell[][]>(gameAreaController.board);
+  const [gameIsOurTurn, setGameIsOurTurn] = useState<boolean>(gameAreaController.isOurTurn);
 
   useEffect(() => {
-    const handleBoardUpdate = () => {
-      setBoard(gameAreaController.board);
+    const boardChangeListener = () => {
+      setGameBoard(gameAreaController.board);
+      setGameIsOurTurn(gameAreaController.isOurTurn);
     };
 
-    const handleTurnUpdate = () => {
-      setIsOurTurn(gameAreaController.isOurTurn);
+    const turnChangeListener = () => {
+      setGameBoard(gameAreaController.board);
+      setGameIsOurTurn(gameAreaController.isOurTurn);
     };
 
-    gameAreaController.addListener('boardChanged', handleBoardUpdate);
-    gameAreaController.addListener('turnChanged', handleTurnUpdate);
+    gameAreaController.addListener('boardChanged', boardChangeListener);
+    gameAreaController.addListener('turnChanged', turnChangeListener);
+
     return () => {
-      gameAreaController.removeListener('boardChanged', handleBoardUpdate);
-      gameAreaController.removeListener('turnChanged', handleTurnUpdate);
+      // Clean up the listeners when the component unmounts
+      gameAreaController.removeListener('boardChanged', boardChangeListener);
+      gameAreaController.removeListener('turnChanged', turnChangeListener);
     };
   }, [gameAreaController]);
 
-  const handleCellClick = async (row: 0 | 1 | 2, col: 0 | 1 | 2) => {
+  // Function to handle a square click
+  const handleSquareClick = async (row: TicTacToeGridPosition, col: TicTacToeGridPosition) => {
     try {
+      // Call a function in your gameAreaController to make a move
       await gameAreaController.makeMove(row, col);
-    } catch (e) {
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+
       toast({
-        description: 'Error: ' + (e instanceof Error ? e.message : String(e)),
+        description: 'Error: ' + errorMessage,
         status: 'error',
       });
     }
   };
 
+  const board = gameBoard.map((row, rowIndex) => (
+    <div key={rowIndex}>
+      {row.map((cell, colIndex) => (
+        <StyledTicTacToeSquare
+          key={colIndex}
+          aria-label={`Cell ${rowIndex},${colIndex}`}
+          onClick={() =>
+            handleSquareClick(rowIndex as TicTacToeGridPosition, colIndex as TicTacToeGridPosition)
+          }
+          disabled={!gameIsOurTurn} // Disable squares if it's not our turn
+        >
+          {cell}
+        </StyledTicTacToeSquare>
+      ))}
+    </div>
+  ));
+
   return (
-    <StyledTicTacToeBoard aria-label='Tic-Tac-Toe Board'>
-      {board.map((row, rowIndex) =>
-        row.map((cell, colIndex) => (
-          <StyledTicTacToeSquare
-            key={`${rowIndex}-${colIndex}`}
-            aria-label={`Cell ${rowIndex},${colIndex}`}
-            onClick={() => handleCellClick(rowIndex as 0 | 1 | 2, colIndex as 0 | 1 | 2)}
-            disabled={!isOurTurn}>
-            {cell}
-          </StyledTicTacToeSquare>
-        )),
-      )}
+    <StyledTicTacToeBoard aria-label='Tic-Tac-Toe Board' disabled={!gameIsOurTurn}>
+      {board}
     </StyledTicTacToeBoard>
   );
 }
